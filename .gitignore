@@ -18,4 +18,5 @@ venv/
 *.nbconvert.ipynb
 *.pkl
 *.pickle
+*.png
 rescale_neuronal_plot.py
