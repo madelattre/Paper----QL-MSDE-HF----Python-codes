@@ -97,6 +97,7 @@ To reproduce the tables and figures from the paper:
 python compile_results.py --model [MODEL_NAME]
 ```
 This script collects all `.pickle files` corresponding to the specified model (e.g. `m1`) and aggregates them into a single summarized results file stored in the same directory.
+
 3. Generate plots with:
 ```bash
 python plot_results.py
