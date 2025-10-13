@@ -3,7 +3,7 @@
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate mixedsde
 
-for SEED in {1..500}
+for SEED in {1..100}
 do
   echo "Repetition $SEED"
   python -u main_simus.py \
