@@ -32,7 +32,7 @@ transformed_T = t_max_seq*len(h_seq)
 h_T = list(product(h_seq, t_max_seq))
 
 
-NB_REP = 500
+NB_REP = 100
 rep_h_T = h_T * NB_REP
 rep_h = transformed_h * NB_REP
 rep_T = transformed_T * NB_REP
