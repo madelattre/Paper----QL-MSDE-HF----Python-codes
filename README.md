@@ -42,40 +42,48 @@ conda activate mixedsde_py312
 
 ## Usage
 
-### Running simulations locally
+### Reproducing results locally
 
-Modify the bash script to choose your model and number of trajectories:
+There are two ways to reproduce the simulations:
+
+#### Option 1 — Using the Bash script (`run_simus.sh`)
+
+Use this option if you want to repeat the experiment several times automatically (for different random seeds or parameter configurations).
 
 ```bash
 bash run_simus.sh
 ```
 
-Or run directly with Python:
+The bash script loops over multiple seeds or settings defined inside the file, allowing batch execution of experiments — for example, to compute Monte Carlo averages as in the paper.
+You can edit the bash file to change:
+- the model (`--model m1`, `--model m2`, `--model m3` for models 1, 2, and 3 from the paper)
+- the number of trajectories (`--N`),
+- or the range of seeds.
+
+#### Option 2 — Using the Python script directly
+
+Use this option to run a single experiment manually:
 
 ```bash
 python main_simus.py --model [MODEL_NAME] --N [NUM_TRAJECTORIES] --seed [SEED]
 ```
 
-In the bash file or command line, the important arguments are
-- `--model`: Name of the model to simulate: `m1`, `m2`, `m3` for models 1, 2, and 3 from the paper.
-- `--N`: Number of trajectories to simulate.
-- Results are saved as `.pickle` files in the `res/` directory. 
-
-### Output
-
-Each `.pickle` file corresponds to one experiment.
-
-### Example
+Example:
 
 ```bash
 python main_simus.py --model m1 --N 200 --seed 42
 ```
 
-produces a file such as: 
+This produces a single result file such as:
 
 ```bash
 res/resN200_42_m1.pickle
 ```
+
+>[!NOTE]
+> Each `.pickle` file corresponds to one experiment.
+> When using the bash script, several such files will be created automatically.
+
 
 ## Reproducing Paper Results
 
@@ -84,16 +92,17 @@ res/resN200_42_m1.pickle
 To reproduce the tables and figures from the paper:
 
 1. Run all simulation scripts to generate `.pickle` results.
-2. Assemble results using:
+2. Summarize results by model using:
 ```bash
-python compile_table_results.py
+python compile_results.py --model [MODEL_NAME]
 ```
+This script collects all `.pickle files` corresponding to the specified model (e.g. `m1`) and aggregates them into a single summarized results file stored in the same directory.
 3. Generate plots with:
 ```bash
 python plot_results.py
 ```
 > [!NOTE]
-> `compile_table_results.py` must always be executed before `plot_results.py`.
+> `compile_results.py` must always be executed before `plot_results.py`.
 
 ### Real data application
 
