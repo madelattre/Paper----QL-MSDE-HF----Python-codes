@@ -1,12 +1,23 @@
 """
-Module for Mixed Stochastic Differential Equations (SDEs).
+Mixed Stochastic Differential Equations (SDEs) Framework.
 
-This module defines the `Mixedsde` class, which represents a mixed stochastic differential equation model. The class allows users to specify drift and diffusion functions, along with their parameters, and provides methods to compute the drift and diffusion components, as well as to generate simulated
-trajectories of the mixed SDE.
+This module provides the `Mixedsde` class for simulating and estimating stochastic differential equations with both fixed and random effects. It leverages JAX for efficient computation, vectorization, and just-in-time (JIT) compilation.
+
+Features:
+---------
+- Simulation of mixed SDE trajectories using Euler-Maruyama.
+- Estimation of drift and diffusion parameters with random effects.
+- Flexible specification of drift and diffusion functions.
+- Parameter management for both fixed and random effects.
+
+Dependencies:
+-------------
+- JAX (https://github.com/google/jax)
 
 Classes:
 --------
-- Mixedsde: A class for defining and working with mixed stochastic differential equations.
+Mixedsde
+    Main class for defining, simulating, and fitting mixed SDE models.
 """
 
 import inspect
@@ -22,41 +33,54 @@ from .fit import (
 
 class Mixedsde:
     """
-    A class to represent a mixed stochastic differential equation (SDE).
+    Mixed Stochastic Differential Equation (SDE) Model.
 
-    This class allows the user to define a mixed SDE by specifying the drift and diffusion functions,
-    their parameters, and the distributions of random effects. It provides methods to compute the drift
-    and diffusion components and to generate simulated trajectories.
+    The `Mixedsde` class represents SDEs with both fixed and random effects in drift and diffusion terms. It provides methods for simulation, parameter estimation, and model fitting.
+
+    Effects:
+    --------
+    - Fixed effect: Parameter constant across all trajectories.
+    - Random effect: Parameter varying across trajectories, modeled by a distribution.
 
     Attributes:
     -----------
     drift_func : callable
-        The function representing the drift component of the SDE.
+        Function for the drift term: drift(y, phi, tau, time).
     drift_re_param : dict
-        A dictionary containing parameters for the random effect in the drift.
+        Parameters for the random effect in drift (e.g., mean 'mu', covariance 'omega2').
     diffusion_func : callable
-        The function representing the diffusion component of the SDE.
+        Function for the diffusion term: diffusion(eta, y, tau, time).
     diffusion_fixed_effect : float
-        The fixed effect parameter in the diffusion coefficient.
+        Fixed effect parameter in the diffusion coefficient.
     diffusion_re_dist : str
-        The distribution type for the random effect in the diffusion coefficient.
+        Distribution type for the random effect in diffusion (e.g., 'normal').
     diffusion_re_param : dict
-        A dictionary containing parameters for the random effect in the diffusion coefficient.
+        Parameters for the random effect in diffusion.
+
+    Methods:
+    --------
+    - drift(y, phi, tau, time): Compute drift value.
+    - diffusion(eta, y, tau, time): Compute diffusion value.
+    - generate_mixed_sde(...): Simulate trajectories.
+    - estim_tau(...): Estimate random effects in diffusion.
+    - estim_diffusion_param(...): Estimate diffusion parameters.
+    - estim_drift_param(...): Estimate drift parameters.
+    - fit_mixed_sde(...): Fit the mixed SDE model to data.
 
     Parameters:
     -----------
     drift_func : callable
-        The drift function to be used in the SDE.
+        Drift function.
     drift_re_param : dict
-        Parameters for the random effect in the drift (e.g., mean and covariance).
+        Random effect parameters for drift.
     diffusion_func : callable
-        The diffusion function to be used in the SDE.
+        Diffusion function.
     diffusion_fixed_effect : float
-        The fixed effect in the diffusion coefficient.
+        Fixed effect in diffusion.
     diffusion_re_dist : str
-        The distribution of the random effect in the diffusion coefficient.
+        Distribution for random effect in diffusion.
     diffusion_re_param : dict
-        Parameters for the random effect in the diffusion coefficient.
+        Random effect parameters for diffusion.
     """
 
     def __init__(
@@ -68,6 +92,24 @@ class Mixedsde:
         diffusion_re_dist,
         diffusion_re_param,
     ):
+        """
+        Initialize a Mixedsde model instance.
+
+        Parameters
+        ----------
+        drift_func : callable
+            Function specifying the drift term of the SDE: drift(y, phi, tau, time).
+        drift_re_param : dict
+            Dictionary of parameters for the random effect in the drift (e.g., mean 'mu', covariance 'omega2').
+        diffusion_func : callable
+            Function specifying the diffusion term of the SDE: diffusion(eta, y, tau, time).
+        diffusion_fixed_effect : float
+            Fixed effect parameter for the diffusion coefficient.
+        diffusion_re_dist : str
+            Name of the distribution for the random effect in diffusion (e.g., 'normal').
+        diffusion_re_param : dict
+            Dictionary of parameters for the random effect in diffusion.
+        """
         self.drift_func = drift_func
         self.drift_re_param = drift_re_param
         self.diffusion_func = diffusion_func
@@ -78,10 +120,18 @@ class Mixedsde:
 
     def __str__(self):
         """
-        Prints the expressions of the drift and diffusion functions, along with model parameters.
+        Return a detailed string representation of the Mixedsde model.
 
-        This method outputs the source code of the drift and diffusion functions, as well as
-        details about the random effects and fixed effects used in the model.
+        This includes:
+        - The source code of the drift and diffusion functions.
+        - The parameters for random effects in drift (mean and covariance).
+        - The distribution and parameters for random effects in diffusion.
+        - The value of the fixed effect in the diffusion coefficient.
+
+        Returns
+        -------
+        str
+            A multi-line string describing the model's functions and parameters.
         """
         print("---Expression of the drift function:")
         print("------------------------------------")
@@ -108,98 +158,71 @@ class Mixedsde:
 
     def drift(self, y, phi, tau, time):
         """
-        Computes the drift component of the SDE.
+        Evaluate the drift component of the SDE at a given state and time.
 
-        Args:
-        ----
-        y : float
-            The current value of the process.
-        phi : float
-            The random effect in the drift.
-        tau : float
-            The random effect in the diffusion coefficient.
-        time : float
-            The current time point.
+        Parameters
+        ----------
+        y : float or array-like
+            Current value(s) of the process.
+        phi : float or array-like
+            Random effect(s) in the drift term.
+        tau : float or array-like
+            Random effect(s) in the diffusion coefficient.
+        time : float or array-like
+            Current time point(s).
 
-        Returns:
+        Returns
         -------
-        float
-            The computed drift value at the given time.
+        float or array-like
+            The computed drift value(s) for the given input(s).
         """
         return _drift(self.drift_func, y, phi, tau, time)
 
     def diffusion(self, eta, y, tau, time):
         """
-        Computes the diffusion component of the SDE.
+        Evaluate the diffusion component of the SDE at a given state and time.
 
-        Args:
-        ----
+        Parameters
+        ----------
         eta : float
-            The fixed effect in the diffusion coefficient.
-        y : float
-            The current value of the process.
-        tau : float
-            The random effect in the diffusion coefficient.
-        time : float
-            The current time point.
+            Fixed effect parameter in the diffusion coefficient.
+        y : float or array-like
+            Current value(s) of the process.
+        tau : float or array-like
+            Random effect(s) in the diffusion coefficient.
+        time : float or array-like
+            Current time point(s).
 
-        Returns:
+        Returns
         -------
-        float
-            The computed diffusion value at the given time.
+        float or array-like
+            The computed diffusion value(s) for the given input(s).
         """
         return _diffusion(self.diffusion_func, eta, y, tau, time)
 
     def generate_mixed_sde(self, nb_trajectories, y0, t0, t_max, h_euler, key):
         """
-        Generates simulated trajectories of the mixed stochastic differential equation (SDE).
+        Simulate multiple trajectories of the mixed SDE using the Euler-Maruyama method.
 
-        This method uses the specified drift and diffusion functions, along with their parameters, to generate a specified number of trajectories of the mixed SDE using the Euler-Maruyama method.
-
-        Args:
-        ----
+        Parameters
+        ----------
         nb_trajectories : int
-            The number of trajectories to simulate.
+            Number of independent trajectories to simulate.
         y0 : float
-            The initial value of the process at time t0.
+            Initial value of the process at time t0.
         t0 : float
-            The starting time for the simulation.
+            Start time for simulation.
         t_max : float
-            The ending time for the simulation.
+            End time for simulation.
         h_euler : float
-            The time step size for the Euler-Maruyama method.
+            Time step size for the Euler-Maruyama discretization.
         key : jax.random.PRNGKey
-            A random key for generating random numbers, used for stochastic components.
+            JAX random key for stochastic sampling.
 
-        Returns:
+        Returns
         -------
         jax.numpy.ndarray
-            A 2D array containing the simulated trajectories, where each row corresponds to a trajectory and each column corresponds to a time point.
-
-        Example:
-        --------
-        import jax.numpy as jnp
-        from jax import random
-
-        # Define drift and diffusion functions
-        def drift_func(y, phi, tau, time):
-            return y + phi  # Example drift function
-
-        def diffusion_func(eta, y, tau, time):
-            return eta * y + tau  # Example diffusion function
-
-        # Initialize parameters
-        drift_re_param = {'mu': 0, 'omega2': 1}
-        diffusion_re_param = {'param1': 0.5}  # Example parameters
-        diffusion_fixed_effect = 1.0
-        diffusion_re_dist = 'normal'
-
-        # Create an instance of Mixedsde
-        mixed_sde = Mixedsde(drift_func, drift_re_param, diffusion_func, diffusion_fixed_effect, diffusion_re_dist, diffusion_re_param)
-
-        # Generate trajectories
-        key = random.PRNGKey(0)
-        trajectories = mixed_sde.generate_mixed_sde(nb_trajectories=10, y0=0.0, t0=0.0, t_max=1.0, h_euler=0.01, key=key)
+            Array of shape (nb_trajectories, num_time_points) containing simulated trajectories.
         """
         return _generate_mixed_sde(
             self.drift_func,
@@ -218,36 +241,44 @@ class Mixedsde:
 
     def estim_tau(self, y, eta, time):
         """
-        This method estimates the random effects in the diffusion coefficient for the model using a vectorized approach. It calls the helper function _estim_tau_vectorized to perform the estimation using the provided data and model parameters.
+        Estimate the random effects (tau) in the diffusion coefficient using a vectorized approach.
 
-        Arguments:
+        Parameters
         ----------
-            y (array-like): The observed data points.
-            eta (array-like): Model parameters related to the stochastic process.
-            time (array-like): Time steps or time matrix associated with the data.
+        y : array-like
+            Observed data points for each trajectory.
+        eta : array-like
+            Fixed effect parameter(s) for the diffusion coefficient.
+        time : array-like
+            Time points or time matrix associated with the data.
 
-        Returns:
-        --------
-            The estimated tau parameter using the vectorized estimation method.
+        Returns
+        -------
+        array-like
+            Estimated values of the random effect tau for each trajectory.
         """
         return _estim_tau_vectorized(self.diffusion_func, y, eta, time)
 
     def estim_diffusion_param(self, y, time, init):
         """
-        This method estimates the diffusion parameters for the model. It calls the helper function _estim_diffusion_param to perform the estimation based on the provided data, initial conditions, and the diffusion-related functions.
+        Estimate the diffusion parameters of the mixed SDE model.
 
-        Arguments:
+        Parameters
         ----------
-            y (array-like): The observed data points.
+        y : array-like
+            Observed data points for each trajectory.
+        time : array-like
+            Time matrix or time steps corresponding to the data.
+        init : dict
+            Dictionary containing initial guesses for the diffusion parameters (key: 'diffusion').
 
-            time (array-like): Time matrix or time steps corresponding to the data.
-
-            init (dict): A dictionary containing the initial guesses for the parameters, including 'diffusion', which is the initial guess for the diffusion parameters.
-
-        Returns:
-        --------
-
-        The estimated diffusion parameters (eta_hat, theta_tau_hat, tau_hat) based on the given data.
+        Returns
+        -------
+        tuple
+            Estimated diffusion parameters:
+            - eta_hat: Estimated fixed effect in diffusion.
+            - theta_tau_hat: Estimated parameters for the random effect distribution in diffusion.
+            - tau_hat: Estimated random effects in diffusion for each trajectory.
         """
         return _estim_diffusion_param(
             y, time, self.diffusion_re_dist, init["diffusion"], self.diffusion_func
@@ -255,26 +286,31 @@ class Mixedsde:
 
     def estim_drift_param(self, y, time_mat, eta, tau, init, covariance_to_estimate, method):
         """
-        This method estimates the drift parameters for the model. It first computes the indices of the elements to estimate in the covariance matrix using the precompute_indices function. Then, it calls the helper function _estim_drift_param to estimate the drift parameters based on the provided data, model functions, initial conditions, and the pre-computed covariance matrix indices.
+        Estimate the drift parameters of the mixed SDE model.
 
-        Arguments:
+        Parameters
         ----------
+        y : array-like
+            Observed data points for each trajectory.
+        time_mat : array-like
+            Time matrix or time steps corresponding to the data.
+        eta : array-like
+            Estimated fixed effect(s) in the diffusion coefficient.
+        tau : array-like
+            Estimated random effects in the diffusion coefficient for each trajectory.
+        init : dict
+            Dictionary containing initial guesses for the drift parameters (key: 'drift').
+        covariance_to_estimate : array-like
+            Covariance matrix specifying which elements to estimate for the drift random effects.
+        method : str
+            Estimation method to use (e.g., optimization algorithm name).
 
-        y (array-like): The observed data points.
-
-        time_mat (array-like): Time matrix corresponding to the data.
-
-        eta (array-like): Parameters related to the model's stochastic process.
-
-        tau (array-like): The estimated tau parameter.
-
-        init (dict): A dictionary containing the initial guesses for the parameters, including 'drift', which is the initial guess for the drift parameters.
-
-        covariance_to_estimate (array-like): The covariance matrix that contains the elements to estimate.
-
-        Returns:
-        --------
-        The estimated drift parameters (mu_hat, omega2_hat) based on the given data and model.
+        Returns
+        -------
+        tuple
+            Estimated drift parameters:
+            - mu_hat: Estimated mean of the random effect in drift.
+            - omega2_hat: Estimated covariance matrix of the random effect in drift.
         """
         assert covariance_to_estimate.shape[0] == covariance_to_estimate.shape[1], "The covariance matrix must be square."
         assert covariance_to_estimate.shape[0] == self.nb_re_drift, "The covariance matrix must be of size nb_re_drift x nb_re_drift."
@@ -296,22 +332,34 @@ class Mixedsde:
 
     def fit_mixed_sde(self, y, time_mat, init, covariance_to_estimate, method):
         """
-        This method fits a mixed Stochastic Differential Equation (SDE) model to the provided data. It sequentially estimates the diffusion and drift parameters by calling the estim_diffusion_param and estim_drift_param methods. Finally, it returns the estimated parameters.
+        Fit the mixed SDE model to observed data by sequentially estimating diffusion and drift parameters.
 
-        Arguments:
+        Parameters
         ----------
-        y (array-like): The observed data points.
+        y : array-like
+            Observed data points for each trajectory.
+        time_mat : array-like
+            Time matrix or time steps corresponding to the data.
+        init : dict
+            Dictionary containing initial guesses for both diffusion and drift parameters.
+        covariance_to_estimate : array-like
+            Covariance matrix specifying which elements to estimate for the drift random effects.
+        method : str
+            Estimation method to use for drift parameters (e.g., optimization algorithm name).
 
-        time_mat (array-like): The time matrix or time steps corresponding to the data.
+        Returns
+        -------
+        tuple
+            Estimated parameters:
+            - eta_hat: Estimated fixed effect in diffusion.
+            - theta_tau_hat: Estimated parameters for the random effect distribution in diffusion.
+            - tau_hat: Estimated random effects in diffusion for each trajectory.
+            - mu_hat: Estimated mean of the random effect in drift.
+            - omega2_hat: Estimated covariance matrix of the random effect in drift.
 
-        init (dict): A dictionary containing the initial guesses for the parameters, including initial guesses for both the diffusion and drift parameters.
-
-        covariance_to_estimate (array-like): The covariance matrix for which elements need to be estimated.
-
-        Returns:
-        --------
-
-        A tuple containing the estimated parameters: (eta_hat, theta_tau_hat, tau_hat, mu_hat, omega2_hat).
+        Notes
+        -----
+        This method first estimates the diffusion parameters, then uses those results to estimate the drift parameters.
         """
         eta_hat, theta_tau_hat, tau_hat = self.estim_diffusion_param(
             y, time_mat[:, 1:], init

@@ -1,6 +1,30 @@
 """
-Module for estimating parameters in mixed stochastic differential equations (SDEs) with random effects.`
-This module provides optimized JAX implementations of various mathematical functions, including matrix transformations, diffusion coefficient estimations, and parameter estimation using maximum likelihood methods. The functions leverage JAX's jit compilation and vectorization (vmap) for efficient computation.
+Parameter estimation utilities for Mixed Stochastic Differential Equations (SDEs) with random effects.
+
+This module provides optimized JAX implementations for estimating drift and diffusion parameters in mixed SDE models.
+It includes functions for matrix transformations, diffusion coefficient estimation, random effect estimation, and maximum likelihood parameter estimation.
+All computations leverage JAX's just-in-time (jit) compilation and vectorization (vmap) for efficient and scalable computation.
+
+Main Functions:
+---------------
+- increments: Compute discrete differences along an array.
+- precompute_indices: Identify indices of covariance matrix elements to estimate.
+- inverse_svd: Compute the inverse of a matrix using singular value decomposition.
+- c_vectorized, c_matrix: Compute vectorized diffusion function outputs.
+- estim_diffusion_coef: Estimate the diffusion coefficient for a trajectory.
+- estim_tau, _estim_tau_vectorized: Estimate random effects in diffusion.
+- eta_estim_function, estim_eta: Estimate fixed effect parameter eta.
+- estim_theta_tau: Estimate parameters of the random effect distribution in diffusion.
+- _estim_diffusion_param: Sequentially estimate diffusion parameters.
+- _a_matrix, _squared_a_matrix: Compute drift function outputs and their squared transformations.
+- mi_inv, vi: Compute statistics for drift parameter estimation.
+- theta_phi_est_function, mu_init_stepwise, _estim_drift_param: Estimate drift parameters using likelihood-based methods.
+- hessian: Compute the Hessian matrix via automatic differentiation.
+- from_vector_to_covariance, from_covariance_to_vector: Convert between covariance matrices and parameter vectors.
+
+Dependencies:
+-------------
+- JAX (https://github.com/google/jax)
 """
 
 import jax
@@ -9,22 +33,19 @@ from jax.scipy.optimize import minimize
 from jax.scipy.stats import norm, expon, gamma
 
 
-# Fonctions utilitaires
-################################################################################
-
-
 def increments(y):
-    # For one trajectory
     """
-    Calculate discrete differences along an array.
+    Compute discrete differences along an array.
 
-    Args:
-    -----
-    - y (array-like): Input values.
+    Parameters
+    ----------
+    y : array-like
+        Input values.
 
-    Returns:
-    --------
-    ndarray: Discrete differences of the array.
+    Returns
+    -------
+    ndarray
+        Discrete differences of the array (y[1:] - y[:-1]).
     """
 
     return jax.numpy.diff(y)
@@ -32,20 +53,35 @@ def increments(y):
 
 def precompute_indices(covariance_to_estimate):
     """
-    This function computes the indices of the elements to be estimated in a covariance matrix. It identifies the upper triangular part of the matrix and returns the indices of the non-zero elements.
+    Identify indices of non-zero elements in the upper triangular part of a covariance matrix.
 
-    Arguments:
+    Parameters
     ----------
-    covariance_to_estimate (array-like): A square matrix for which the indices of the upper triangular elements will be computed.
+    covariance_to_estimate : array-like
+        Square matrix indicating which elements to estimate.
 
-    Returns:
-    --------
-    array-like: Indices of the elements in the upper triangular part of the matrix that are to be estimated.
+    Returns
+    -------
+    array-like
+        Indices of elements in the upper triangular part to be estimated.
     """
     return jax.numpy.where(jax.numpy.triu(covariance_to_estimate).ravel())[0]
 
 
 def inverse_svd(matrix):
+    """
+    Compute the inverse of a matrix using singular value decomposition (SVD).
+
+    Parameters
+    ----------
+    matrix : array-like
+        Input matrix to invert.
+
+    Returns
+    -------
+    ndarray
+        Inverse of the input matrix.
+    """
     u, s, vh = jax.numpy.linalg.svd(matrix)
     inv_matrix = jax.numpy.dot(vh.T, jax.numpy.dot(jax.numpy.diag(1 / s), u.T))
     return inv_matrix
@@ -54,18 +90,23 @@ def inverse_svd(matrix):
 @partial(jax.jit, static_argnums=0)
 def c_vectorized(diffusion_func, diffusion_fixed_effect, y, time):
     """
-    Compute the vectorized diffusion function.
+    Compute the vectorized output of the diffusion function for a single trajectory.
 
-    Args:
-    -----
-    - diffusion_func (callable): Diffusion function.
-    - diffusion_fixed_effect (float or array-like): Fixed effect parameter.
-    - y (array-like): Input values.
-    -  time (array-like): Corresponding time points.
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    diffusion_fixed_effect : float or array-like
+        Fixed effect parameter.
+    y : array-like
+        Observed values.
+    time : array-like
+        Time points.
 
-    Returns:
-    --------
-    ndarray: Vectorized diffusion function output.
+    Returns
+    -------
+    ndarray
+        Vectorized diffusion function output for each time step.
     """
 
     n = len(y)
@@ -80,16 +121,21 @@ def c_matrix(diffusion_func, diffusion_fixed_effect, y, time_mat):
     """
     Compute diffusion function values for multiple trajectories.
 
-    Args:
-    -----
-    - diffusion_func (callable): Diffusion function.
-    - diffusion_fixed_effect (float or array-like): Fixed effect parameter.
-    - y (array-like): Observed data matrix.
-    - time (array-like): Time points.
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    diffusion_fixed_effect : float or array-like
+        Fixed effect parameter.
+    y : array-like
+        Observed data matrix (trajectories).
+    time_mat : array-like
+        Time points matrix.
 
-    Returns:
-    --------
-    ndarray: Diffusion function matrix.
+    Returns
+    -------
+    ndarray
+        Diffusion function matrix for all trajectories and time steps.
     """
     nb_obs_per_trajectory = y.shape[1]
     cy = jax.vmap(diffusion_func, in_axes=(0, None, 0))(
@@ -102,22 +148,27 @@ def c_matrix(diffusion_func, diffusion_fixed_effect, y, time_mat):
 
 def estim_diffusion_coef(diffusion_func, y, eta, time):
     """
-    Estimate the diffusion coefficient for a given path.
-    This function computes an estimate of the diffusion coefficient based on the provided path, a fixed parameter `eta`, and the time points.
+    Estimate the diffusion coefficient for a single trajectory.
 
-    Args:
-    ----
-        diffusion_func (callable): Diffusion function.
-        y (array-like): The observed time series data.
-        eta (float or array-like): A parameter used in the computation of the diffusion coefficient.
-        time (array-like): The time points corresponding to the observations in `y`.
-    Returns:
-    --------
-        float: The estimated diffusion coefficient.
-    Notes:
-    ------
-        - The function uses JAX for numerical computations, which allows for efficient differentiation and parallelization.
-        - The computation involves calculating increments of the time series, squaring them, and normalizing by a function of `eta` and `time`.
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    y : array-like
+        Observed time series data.
+    eta : float or array-like
+        Fixed effect parameter for diffusion.
+    time : array-like
+        Time points.
+
+    Returns
+    -------
+    float
+        Estimated diffusion coefficient for the trajectory.
+
+    Notes
+    -----
+    Uses increments and normalizes by the squared diffusion function.
     """
 
     h = jax.numpy.diff(time)[0,]
@@ -150,19 +201,23 @@ def estim_diffusion_coef(diffusion_func, y, eta, time):
 @partial(jax.jit, static_argnums=0)
 def estim_tau(diffusion_func, y, eta, time):
     """
-    Compute an estimation of the random effect in the diffusion coefficient when fixed-effects values are known. This function calculates the random effects in the diffusion coefficient
-    based on the observations of a single path, a fixed-effect value, and the corresponding time points.
+    Estimate the random effect (tau) in the diffusion coefficient for a single trajectory.
 
-    Args:
-    -----
-        diffusion_func (callable): Diffusion function.
-        y (array-like): A 1D array containing the observations of one path.
-        eta (float): The fixed-effect value in the diffusion coefficient.
-        time (array-like): A vector of time points corresponding to the observations.
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    y : array-like
+        Observed data for one trajectory.
+    eta : float
+        Fixed effect parameter for diffusion.
+    time : array-like
+        Time points.
 
-    Returns:
-    --------
-        float: The estimated value of the random effect in the diffusion coefficient.
+    Returns
+    -------
+    float
+        Estimated value of tau for the trajectory.
     """
 
     nb_obs_per_trajectory = len(y) - 1
@@ -178,22 +233,23 @@ def estim_tau(diffusion_func, y, eta, time):
 @partial(jax.jit, static_argnums=0)
 def _estim_tau_vectorized(diffusion_func, y, eta, time_mat):
     """
-    Vectorized estimation of tau values for a given dataset.
-    This function applies the `estim_tau` function to each path of the input array `y` in a vectorized manner using JAX's `vmap`. The results are then reshaped into a column vector.
+    Vectorized estimation of tau values for multiple trajectories.
 
-    Args:
-    -----
-    diffusion_func (callable): Diffusion function.
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
     y : array-like
-        Input data array where each row corresponds to an individual data point.
+        Data matrix (trajectories).
     eta : float or array-like
-        Parameter(s) required by the `estim_tau` function.
-    time : array-like
-        Time points corresponding to the data in `y`.
-    Returns:
-    --------
-    numpy.ndarray
-        A column vector containing the estimated tau values for each row in `y`.
+        Fixed effect parameter for diffusion.
+    time_mat : array-like
+        Time points matrix.
+
+    Returns
+    -------
+    ndarray
+        Column vector of estimated tau values for each trajectory.
     """
     value = jax.vmap(estim_tau, in_axes=(None, 0, None, 0))(
         diffusion_func, y, eta, time_mat)
@@ -203,19 +259,23 @@ def _estim_tau_vectorized(diffusion_func, y, eta, time_mat):
 @partial(jax.jit, static_argnums=0)
 def eta_estim_function(diffusion_func, eta, y, time_mat):
     """
-    Computes the estimation function of eta based on the provided parameters.
-    This function uses the mean of the logarithm
-    of two components: the result of `estim_tau_vectorized` and the square of
-    the result of `c_matrix`. Both components are evaluated with the given inputs `y`, `eta`, and `time`.
-    Args:
-    -----
-        diffusion_func (callable): Diffusion function.
-        eta (float or array-like): The current fixed-effect parameter eta.
-        y (array-like): Observed data.
-        time (array-like): Time points corresponding to the observed data.
-    Returns:
-    --------
-        float: The computed estimation function value for the given value of eta.
+    Compute the objective function for eta estimation.
+
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    eta : float or array-like
+        Current value of eta.
+    y : array-like
+        Observed data.
+    time_mat : array-like
+        Time points.
+
+    Returns
+    -------
+    float
+        Value of the estimation function for eta.
     """
 
     value = 1 / 2 * jax.numpy.mean(
@@ -242,19 +302,23 @@ def eta_estim_function(diffusion_func, eta, y, time_mat):
 @partial(jax.jit, static_argnums=0)
 def estim_eta(diffusion_func, y, time_mat, init):
     """
-    Estimate the parameter eta using optimization.
+    Estimate the fixed effect parameter eta using optimization.
 
-    This function estimates the value of eta by minimizing a given objective
-    function `eta_estim_function` using the BFGS optimization method.
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    y : array-like
+        Observed data.
+    time_mat : array-like
+        Time points.
+    init : float or array-like
+        Initial guess for eta.
 
-    Args:
-        diffusion_func (callable): Diffusion function.
-        y (array-like): Observed data.
-        time (array-like): Time points corresponding to the observed data.
-        init (float or array-like): Initial guess for the eta parameter.
-
-    Returns:
-        float or array-like: The estimated value of eta that minimizes the objective function.
+    Returns
+    -------
+    float or array-like
+        Estimated value of eta.
     """
 
     assert init.shape[0] == 1, "The initial value of eta must be a scalar."
@@ -269,43 +333,26 @@ def estim_eta(diffusion_func, y, time_mat, init):
 
 def estim_theta_tau(distribution, tau, init):
     """
-    Estimate the parameters of a given distribution using maximum likelihood estimation.
+        Estimate parameters of the specified distribution for tau using maximum likelihood.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     distribution : str
-        The name of the distribution to estimate. Supported values are:
-        - "exponential"
-        - "gamma"
-        - "weibull"
-        - "lognormal"
+        Distribution name ('exponential', 'gamma', 'weibull', 'lognormal', 'weibull_loc').
     tau : array-like
-        The data samples used for parameter estimation.
+        Data samples for estimation.
     init : list or array-like
-        Initial guesses for the parameters of the distribution. The number of
-        initial values must match the number of parameters for the specified distribution:
-        - "exponential": 1 parameter (rate)
-        - "gamma": 2 parameters (shape, scale)
-        - "weibull": 2 parameters (shape, scale)
-        - "lognormal": 2 parameters (mean, standard deviation)
+        Initial guesses for distribution parameters.
 
-    Returns:
-    --------
-    numpy.ndarray
-        The estimated parameters of the specified distribution.
-
-    Raises:
+    Returns
     -------
-    ValueError
-        If the `distribution` is not supported or if the number of initial values
-        in `init` does not match the expected number of parameters for the specified distribution.
+    ndarray
+        Estimated parameters of the distribution.
 
-    Notes:
+    Raises
     ------
-    - The function uses the `jax` library for vectorized computations and the
-      `scipy.optimize.minimize` function with the "BFGS" method for optimization.
-    - The Weibull distribution is implemented manually as it is not available in
-      `jax.scipy.stats`.
+    ValueError
+        If distribution is unsupported or initial values are invalid.
     """
 
     if distribution == "exponential":
@@ -410,24 +457,25 @@ def estim_theta_tau(distribution, tau, init):
 @partial(jax.jit, static_argnums=(2, 4))
 def _estim_diffusion_param(y, time_mat, tau_distribution, init, diffusion_func):
     """
-    Estimate the diffusion parameters of the mixed sde model.
-    This function estimates the parameters of a diffusion process by sequentially
-    estimating the eta parameter, the tau vector, and the theta_tau parameter.
-    Args:
-    -----
-        y (array-like): Observed data points.
-        time (array-like): Time points corresponding to the observed data.
-        tau_distribution (str): The distribution type for the tau parameter.
-        init (dict): A dictionary containing initial values for the parameters:
-            - 'eta': Initial value for the eta parameter.
-            - 'theta_tau': Initial value for the theta_tau parameter.
-        diffusion_func (callable): Diffusion function.
-    Returns:
-    --------
-        tuple: A tuple containing:
-            - eta_hat (float): Estimated value of the eta parameter.
-            - theta_tau_hat (any): Estimated value of the theta_tau parameter.
-            - tau_hat (array-like): Estimated tau vector.
+    Sequentially estimate the diffusion parameters of the mixed SDE model.
+
+    Parameters
+    ----------
+    y : array-like
+        Observed data points.
+    time_mat : array-like
+        Time points.
+    tau_distribution : str
+        Distribution type for tau.
+    init : dict
+        Initial values for eta and theta_tau.
+    diffusion_func : callable
+        Diffusion function.
+
+    Returns
+    -------
+    tuple
+        (eta_hat, theta_tau_hat, tau_hat): Estimated eta, distribution parameters, and tau vector.
     """
     init_eta = init["eta"]
     init_theta_tau = jax.numpy.array(list(init["theta_tau"].values()))
@@ -443,7 +491,7 @@ def _estim_diffusion_param(y, time_mat, tau_distribution, init, diffusion_func):
 
 
 ###############################################################################
-# Partie drift
+# Drift part
 ###############################################################################
 
 @partial(jax.jit, static_argnums=0)
@@ -451,15 +499,19 @@ def _a_matrix(drift_func, y, time):
     """
     Compute the drift function output reshaped as a column matrix.
 
-    Args:
-    -----
-    - drift_func (callable): Function representing the drift.
-    - y (array-like): Input values.
-    - time (array-like): Corresponding time points.
+    Parameters
+    ----------
+    drift_func : callable
+        Drift function.
+    y : array-like
+        Input values.
+    time : array-like
+        Time points.
 
-    Returns:
-    --------
-    ndarray: Reshaped output matrix.
+    Returns
+    -------
+    ndarray
+        Column matrix of drift function outputs.
     """
     return drift_func(y, time).reshape(-1, 1)
 
@@ -469,15 +521,19 @@ def _squared_a_matrix(drift_func, y, time):
     """
     Compute the squared transformation of the drift function matrix.
 
-    Args:
-    -----
-    - drift_func (callable): Function representing the drift.
-    - y (array-like): Input values.
-    - time (array-like): Corresponding time points.
+    Parameters
+    ----------
+    drift_func : callable
+        Drift function.
+    y : array-like
+        Input values.
+    time : array-like
+        Time points.
 
-    Returns:
-    --------
-    ndarray: Squared matrix transformation.
+    Returns
+    -------
+    ndarray
+        Squared matrix transformation for each time step.
     """
 
     nb_obs_per_trajectory = len(y)
@@ -497,7 +553,31 @@ def _squared_a_matrix(drift_func, y, time):
 
 @partial(jax.jit, static_argnums=(0, 1, 2))
 def mi_inv(diffusion_func, drift_func, nb_re_drift, y, time, eta, tau):
+    """
+    Compute the inverse of mi matrix for drift parameter estimation.
 
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    drift_func : callable
+        Drift function.
+    nb_re_drift : int
+        Number of random effects in drift.
+    y : array-like
+        Observed data for one trajectory.
+    time : array-like
+        Time points.
+    eta : array-like
+        Fixed effect parameter for diffusion.
+    tau : array-like
+        Random effect parameter for diffusion.
+
+    Returns
+    -------
+    ndarray
+        Inverse mi matrix for drift estimation.
+    """
     h = jax.numpy.diff(time)[0,]
 
     nb_obs_per_trajectory = len(y)
@@ -530,7 +610,29 @@ def mi_inv(diffusion_func, drift_func, nb_re_drift, y, time, eta, tau):
 
 @partial(jax.jit, static_argnums=(0, 1, 2))
 def vi(diffusion_func, drift_func, nb_re_drift, y, time, eta):
+    """
+    Compute the vi statistics for drift parameter estimation.
 
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    drift_func : callable
+        Drift function.
+    nb_re_drift : int
+        Number of random effects in drift.
+    y : array-like
+        Observed data for one trajectory.
+    time : array-like
+        Time points.
+    eta : array-like
+        Fixed effect parameter for diffusion.
+
+    Returns
+    -------
+    ndarray
+        vi statistics vector for drift estimation.
+    """
     nb_obs_per_trajectory = len(y)
 
     invcy2 = jax.lax.reciprocal(
@@ -565,28 +667,33 @@ def vi(diffusion_func, drift_func, nb_re_drift, y, time, eta):
 @partial(jax.jit, static_argnums=(0, 1, 2))
 def theta_phi_est_function(diffusion_func, drift_func, nb_re_drift, y, time, eta, tau, mu, omega2):
     """
-    Computes the log-likelihood value for a given set of parameters in the context of mixed stochastic differential equations (SDEs).
+    Compute the log-likelihood value for drift parameter estimation in mixed SDEs.
 
-    Parameters:
-    -----------
-    diffusion_func (callable): Diffusion function.
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    drift_func : callable
+        Drift function.
+    nb_re_drift : int
+        Number of random effects in drift.
     y : array-like
-        Observed data points for the trajectories.
+        Observed data for one trajectory.
     time : array-like
-        Time points corresponding to the observations in `y`.
+        Time points.
     eta : array-like
-        Parameter vector used in the computation of the `c_vectorized` function.
+        Fixed effect parameter for diffusion.
     tau : float
-        Scaling factor for the covariance matrix.
+        Random effect parameter for diffusion.
     mu : array-like
-        Mean vector for the prior distribution.
+        Mean vector for drift random effects.
     omega2 : array-like
-        Covariance matrix for the prior distribution.
+        Covariance matrix for drift random effects.
 
-    Returns:
-    --------
-    value : float
-        The computed log-likelihood value based on the input parameters.
+    Returns
+    -------
+    float
+        Log-likelihood value for the given parameters.
     """
 
     mi_inv_ind = mi_inv(diffusion_func, drift_func,
@@ -602,7 +709,31 @@ def theta_phi_est_function(diffusion_func, drift_func, nb_re_drift, y, time, eta
 
 @partial(jax.jit, static_argnums=(0, 1, 2))
 def mu_init_stepwise(diffusion_func, drift_func, nb_re_drift, y, time_mat, eta, tau):
+    """
+    Compute the initial estimate of the mean vector (mu) for drift random effects using a stepwise approach.
 
+    Parameters
+    ----------
+    diffusion_func : callable
+        Diffusion function.
+    drift_func : callable
+        Drift function.
+    nb_re_drift : int
+        Number of random effects in drift.
+    y : array-like
+        Data matrix (trajectories).
+    time_mat : array-like
+        Time points matrix.
+    eta : array-like
+        Fixed effect parameter for diffusion.
+    tau : array-like
+        Random effect parameter for diffusion.
+
+    Returns
+    -------
+    ndarray
+        Initial estimate of mu for drift random effects.
+    """
     identity_matrix = jax.numpy.identity(nb_re_drift)
 
     mi_inv_vect = jax.vmap(mi_inv, in_axes=(None, None, None, 0, 0, None, 0)
@@ -639,32 +770,35 @@ def _estim_drift_param(
 
 ):
     """
-    This function estimates the drift and diffusion parameters (theta_phi) of a model based on a given dataset. It uses a minimization approach to optimize the parameters by minimizing the negative log-likelihood.
+    Estimate drift parameters (mean and covariance) in mixed SDEs using likelihood-based optimization.
 
-    Arguments:
+    Parameters
     ----------
-    diffusion_func (callable): The function representing the diffusion process in the model.
+    diffusion_func : callable
+        Diffusion function.
+    drift_func : callable
+        Drift function.
+    nb_re_drift : int
+        Number of random effects in drift.
+    y : array-like
+        Data matrix (trajectories).
+    time_mat : array-like
+        Time points matrix.
+    eta : array-like
+        Fixed effect parameter for diffusion.
+    tau : array-like
+        Random effect parameter for diffusion.
+    init : dict
+        Initial guesses for 'mu' and 'omega2'.
+    covariance_to_estimate_indices : array-like
+        Indices of covariance matrix elements to estimate.
+    method : str
+        Estimation method ('joint' or 'stepwise').
 
-    drift_func (callable): The function representing the drift process in the model.
-
-    y (array-like): The observed data points.
-
-    time_mat (array-like): The matrix of time steps associated with the data.
-
-    eta (array-like): Parameters related to the model's stochastic process.
-
-    tau (array-like): Time discretization or other time-related parameters.
-
-    init (dict): A dictionary containing the initial guesses for parameters, such as "mu" (mean) and "omega2" (covariance).
-
-    covariance_to_estimate_indices (array-like): Indices of the elements in the covariance matrix to be estimated.
-
-    method ...
-
-    Returns:
-    --------
-
-    A tuple (mu_hat, omega2_hat) representing the estimated mean vector (mu_hat) and covariance matrix (omega2_hat).
+    Returns
+    -------
+    tuple
+        (mu_hat, omega2_hat): Estimated mean vector and covariance matrix for drift random effects.
     """
     assert init["mu"].shape[0] == nb_re_drift, "The initial mean vector must have the same length as nb_re_drift."
     assert init['mu'].shape[0] == drift_func(
@@ -753,8 +887,20 @@ def _estim_drift_param(
     return (mu_hat, omega2_hat)
 
 
-# Automatic differentiation to compute gradient and hessian
 def hessian(f):
+    """
+    Compute the Hessian matrix of a scalar-valued function using automatic differentiation.
+
+    Parameters
+    ----------
+    f : callable
+        Function for which to compute the Hessian.
+
+    Returns
+    -------
+    callable
+        Function that computes the Hessian matrix at a given point.
+    """
     return jax.jacfwd(jax.grad(f))
 
 
@@ -762,15 +908,19 @@ def from_vector_to_covariance(theta, mu_size, covariance_to_estimate_indices):
     """
     Reconstruct a symmetric covariance matrix from a parameter vector.
 
-    Args:
-    -----
-        theta (array-like): A 1D vector containing the covariance parameters.
-        mu_size (int): The size of the covariance matrix (mu_size, mu_size).
-        covariance_to_estimate_indices (array-like): Indices of the elements to be updated.
+    Parameters
+    ----------
+    theta : array-like
+        1D vector containing covariance parameters.
+    mu_size : int
+        Size of the covariance matrix (mu_size x mu_size).
+    covariance_to_estimate_indices : array-like
+        Indices of elements to update in the covariance matrix.
 
-    Returns:
-    --------
-        array-like: A symmetric covariance matrix of size (mu_size, mu_size).
+    Returns
+    -------
+    ndarray
+        Symmetric covariance matrix of size (mu_size, mu_size).
     """
     omega2_p = jax.numpy.zeros((mu_size * mu_size,))
     omega2_p = omega2_p.at[covariance_to_estimate_indices].set(theta)
@@ -782,17 +932,19 @@ def from_vector_to_covariance(theta, mu_size, covariance_to_estimate_indices):
 @jax.jit
 def from_covariance_to_vector(omega2, selected_indices):
     """
-    This function extracts a vector of elements from the upper triangular part of a covariance matrix, based on pre-calculated indices.
+    Extract a vector of elements from the upper triangular part of a covariance matrix.
 
-    Arguments:
+    Parameters
     ----------
-    omega2 (ndarray): The covariance matrix from which elements will be extracted.
+    omega2 : ndarray
+        Covariance matrix.
+    selected_indices : ndarray
+        Indices of elements to extract from the upper triangular part.
 
-    selected_indices (ndarray): Indices of the elements to extract from the upper triangular part of the matrix.
-
-    Returns:
-    --------
-    ndarray: A 1D vector of the selected elements from the covariance matrix.
+    Returns
+    -------
+    ndarray
+        1D vector of selected elements from the covariance matrix.
     """
     upper_triangle_indices = jax.numpy.triu_indices_from(omega2)
     upper_triangle_elements = omega2[upper_triangle_indices]

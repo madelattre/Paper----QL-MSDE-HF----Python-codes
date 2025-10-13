@@ -1,21 +1,23 @@
 """
-Module for simulating mixed stochastic differential equations (SDEs) with random effects.
+Simulation utilities for Mixed Stochastic Differential Equations (SDEs).
 
-This module provides functions to define and simulate mixed SDEs, including the computation of
-drift and diffusion components, as well as generating random effects from various distributions.
-The functions leverage JAX for efficient computation and automatic differentiation.
+This module provides functions to define and simulate mixed SDEs with both fixed and random effects.
+It includes routines for computing drift and diffusion components, simulating multiple trajectories
+using the Euler-Maruyama method, and generating random effects from various distributions.
+All computations leverage JAX for efficient vectorization and automatic differentiation.
 
-Functions:
-----------
-- _drift(drift_func, y, phi, tau, time)
-- _diffusion(diffusion_func, diffusion_fixed_effect, y, tau, time)
-- simulate_several_paths(drift_func, diffusion_func, diffusion_fixed_effect, phis, taus, keys, y0, tim_points)
-- _generate_mixed_sde(drift_func, diffusion_func, diffusion_fixed_effect, diffusion_re_dist, diffusion_re_param, drift_re_param, nb_trajectories, y0, t0, t_max, h_euler, key)
-- case_exponential(key, n, param)
-- case_weibull(key, n, param)
-- case_gamma(key, n, param)
-- case_lognormal(key, n, param)
-- generate_random_effects(n, distribution, key, theta_tau, theta_phi)
+Main Functions:
+---------------
+- _drift: Compute the drift component of the SDE.
+- _diffusion: Compute the diffusion component of the SDE.
+- simulate_several_paths: Simulate multiple SDE trajectories.
+- _generate_mixed_sde: Generate mixed SDE trajectories with random effects.
+- case_exponential, case_weibull, case_gamma, case_lognormal: Generate random samples from specified distributions.
+- generate_random_effects: Generate random effects for drift and diffusion terms.
+
+Dependencies:
+-------------
+- JAX (https://github.com/google/jax)
 """
 
 import jax
@@ -26,25 +28,30 @@ import jax.scipy.stats
 @partial(jax.jit, static_argnums=0)
 def _drift(drift_func, y, phi, tau, time):
     """
-    Computes the drift component of the SDE.
+    Compute the drift component of the SDE at a given state and time.
 
-    Args:
-    ----
+    Parameters
+    ----------
     drift_func : callable
-        The function representing the drift component.
-    y : float
-        The current value of the process.
-    phi : float
-        The random effect in the drift.
-    tau : float
-        The random effect in the diffusion coefficient.
-    time : float
-        The current time point.
+        Function representing the drift term, typically drift(y, time).
+    y : float or array-like
+        Current value(s) of the process.
+    phi : float or array-like
+        Random effect(s) in the drift term.
+    tau : float or array-like
+        Random effect(s) in the diffusion coefficient.
+    time : float or array-like
+        Current time point(s).
 
-    Returns:
+    Returns
     -------
-    float
-        The computed drift value at the given time.
+    float or array-like
+        The computed drift value(s) for the given input(s).
+
+    Notes
+    -----
+    The drift is computed as: tau * phi @ drift_func(y, time).
+    This function is JIT-compiled for efficiency.
     """
 
     return tau * phi @ drift_func(y, time)
@@ -53,25 +60,30 @@ def _drift(drift_func, y, phi, tau, time):
 @partial(jax.jit, static_argnums=0)
 def _diffusion(diffusion_func, diffusion_fixed_effect, y, tau, time):
     """
-    Computes the diffusion component of the SDE.
+    Compute the diffusion component of the SDE at a given state and time.
 
-    Args:
-    ----
+    Parameters
+    ----------
     diffusion_func : callable
-        The function representing the diffusion component.
+        Function representing the diffusion term.
     diffusion_fixed_effect : float
-        The fixed effect parameter in the diffusion coefficient.
-    y : float
-        The current value of the process.
-    tau : float
-        The random effect in the diffusion coefficient.
-    time : float
-        The current time point.
+        Fixed effect parameter in the diffusion coefficient.
+    y : float or array-like
+        Current value(s) of the process.
+    tau : float or array-like
+        Random effect(s) in the diffusion coefficient.
+    time : float or array-like
+        Current time point(s).
 
-    Returns:
+    Returns
     -------
-    float
-        The computed diffusion value at the given time.
+    float or array-like
+        The computed diffusion value(s) for the given input(s).
+
+    Notes
+    -----
+    The diffusion is computed as: sqrt(tau) * diffusion_func(y, diffusion_fixed_effect, time).
+    This function is JIT-compiled for efficiency.
     """
     return jax.numpy.sqrt(tau) * diffusion_func(y, diffusion_fixed_effect, time)
 
@@ -81,34 +93,37 @@ def simulate_several_paths(
     drift_func, diffusion_func, diffusion_fixed_effect, phis, taus, keys, y0, tim_points
 ):
     """
-    Simulates several paths of the mixed SDE using the Euler-Maruyama method.
+    Simulate multiple trajectories of the mixed SDE using the Euler-Maruyama method.
 
-    Args:
-    ----
+    Parameters
+    ----------
     drift_func : callable
-        The function representing the drift component.
+        Function representing the drift term.
     diffusion_func : callable
-        The function representing the diffusion component.
+        Function representing the diffusion term.
     diffusion_fixed_effect : float
-        The fixed effect parameter in the diffusion coefficient.
+        Fixed effect parameter in the diffusion coefficient.
     phis : jax.numpy.ndarray
         Array of random effects for the drift.
     taus : jax.numpy.ndarray
         Array of random effects for the diffusion.
     keys : jax.random.PRNGKey
-        Random keys for generating random numbers.
+        Array of random keys for generating noise.
     y0 : float
-        The initial value of the process.
+        Initial value of the process.
     tim_points : jax.numpy.ndarray
         Array of time points for the simulation.
 
-    Returns:
+    Returns
     -------
     jax.numpy.ndarray
-        A 2D array containing the simulated trajectories, where each row corresponds to a trajectory
-        and each column corresponds to a time point.
+        Simulated trajectories (shape: [nb_trajectories, num_time_points]).
     jax.numpy.ndarray
-        A 2D array of time points repeated for each trajectory.
+        Time matrix repeated for each trajectory.
+
+    Notes
+    -----
+    Each trajectory is simulated independently with its own random effects and noise.
     """
 
     nb_trajectories = phis.shape[0]
@@ -188,29 +203,49 @@ def _generate_mixed_sde(
     key,
 ):
     """
-    Generates simulated trajectories of the mixed stochastic differential equation (SDE).
+    Generate simulated trajectories of the mixed SDE model.
 
-    This method uses the specified drift and diffusion functions, along with their parameters, to generate a specified number of trajectories of the mixed SDE using the Euler-Maruyama method.
-
-    Args:
-    ----
+    Parameters
+    ----------
+    drift_func : callable
+        Function representing the drift term.
+    diffusion_func : callable
+        Function representing the diffusion term.
+    diffusion_fixed_effect : float
+        Fixed effect parameter in the diffusion coefficient.
+    diffusion_re_dist : str
+        Distribution type for random effects in diffusion ('exponential', 'weibull', 'gamma', 'lognormal').
+    diffusion_re_param : dict
+        Parameters for the random effect distribution in diffusion.
+    drift_re_param : dict
+        Parameters for the random effect distribution in drift.
     nb_trajectories : int
-        The number of trajectories to simulate.
+        Number of trajectories to simulate.
     y0 : float
-        The initial value of the process at time t0.
+        Initial value of the process.
     t0 : float
-        The starting time for the simulation.
+        Start time for simulation.
     t_max : float
-        The ending time for the simulation.
+        End time for simulation.
     h_euler : float
-        The time step size for the Euler-Maruyama method.
+        Time step size for Euler-Maruyama discretization.
     key : jax.random.PRNGKey
-        A random key for generating random numbers, used for stochastic components.
+        Random key for stochastic sampling.
 
-    Returns:
+    Returns
     -------
     jax.numpy.ndarray
-        A 2D array containing the simulated trajectories, where each row corresponds to a trajectory and each column corresponds to a time point.
+        Simulated trajectories (shape: [nb_trajectories, num_time_points]).
+    jax.numpy.ndarray
+        Random effects tau for diffusion.
+    jax.numpy.ndarray
+        Random effects phi for drift.
+    jax.numpy.ndarray
+        Time matrix repeated for each trajectory.
+
+    Notes
+    -----
+    Random effects are generated for each trajectory and used in simulation.
     """
 
     subkeys = jax.random.split(key, nb_trajectories)
@@ -241,18 +276,24 @@ def case_exponential(key, n, param):
     """
     Generate samples from an exponential distribution.
 
-    Parameters:
-    key (jax.random.PRNGKey): The random key used for generating random numbers.
-    n (int): The number of samples to generate. Must be a positive integer.
-    param (dict): A dictionary containing the parameter "lambda" for the exponential distribution.
-                  The dictionary must have the key "lambda" with a positive value.
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        Random key for generating samples.
+    n : int
+        Number of samples to generate.
+    param : dict
+        Dictionary with key 'lambda' (rate parameter, positive float).
 
-    Returns:
-    jax.numpy.DeviceArray: An array of shape (n,) containing samples from the exponential distribution.
+    Returns
+    -------
+    jax.numpy.DeviceArray
+        Array of shape (n,) with exponential samples.
 
-    Raises:
-    ValueError: If `n` is not a positive integer.
-    ValueError: If `param` is not a dictionary or does not contain the key "lambda".
+    Raises
+    ------
+    ValueError
+        If n is not positive or param is missing 'lambda'.
     """
 
     if not isinstance(n, int) or n <= 0:
@@ -267,21 +308,26 @@ def case_exponential(key, n, param):
 
 def case_weibull(key, n, param):
     """
-    Generates random samples from a Weibull distribution using JAX.
+    Generate samples from a Weibull distribution.
 
-    Parameters:
-    key (jax.random.PRNGKey): The random key used for generating random numbers.
-    n (int): The number of samples to generate. Must be a positive integer.
-    param (dict): A dictionary containing the parameters of the Weibull distribution:
-        - c (float): The concentration parameter of the Weibull distribution.
-        - scale (float): The scale parameter of the Weibull distribution.
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        Random key for generating samples.
+    n : int
+        Number of samples to generate.
+    param : dict
+        Dictionary with keys 'c' (concentration) and 'scale' (scale parameter).
 
-    Returns:
-    jax.numpy.ndarray: An array of shape (n,) containing the generated samples.
+    Returns
+    -------
+    jax.numpy.ndarray
+        Array of shape (n,) with Weibull samples.
 
-    Raises:
-    ValueError: If `n` is not a positive integer.
-    ValueError: If `param` is not a dictionary with keys 'c' and 'scale'.
+    Raises
+    ------
+    ValueError
+        If n is not positive or param is missing required keys.
     """
 
     if not isinstance(n, int) or n <= 0:
@@ -298,17 +344,26 @@ def case_weibull(key, n, param):
 
 def case_gamma(key, n, param):
     """
-    Generates samples from a gamma distribution using the given parameters.
-    Parameters:
-    key (jax.random.PRNGKey): The random key used for generating random numbers.
-    n (int): The number of samples to generate. Must be a positive integer.
-    param (dict): A dictionary containing the parameters for the gamma distribution.
-                  Must include 'shape' and 'scale' keys.
-    Returns:
-    jax.numpy.DeviceArray: An array of samples from the gamma distribution.
-    Raises:
-    ValueError: If 'n' is not a positive integer.
-    ValueError: If 'param' is not a dictionary with 'shape' and 'scale' keys.
+    Generate samples from a gamma distribution.
+
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        Random key for generating samples.
+    n : int
+        Number of samples to generate.
+    param : dict
+        Dictionary with keys 'shape' and 'scale'.
+
+    Returns
+    -------
+    jax.numpy.DeviceArray
+        Array of shape (n,) with gamma samples.
+
+    Raises
+    ------
+    ValueError
+        If n is not positive or param is missing required keys.
     """
 
     if not isinstance(n, int) or n <= 0:
@@ -328,21 +383,26 @@ def case_gamma(key, n, param):
 
 def case_lognormal(key, n, param):
     """
-    Generate log-normal distributed samples.
+    Generate samples from a log-normal distribution.
 
-    Parameters:
-    key (jax.random.PRNGKey): The random key used for generating random numbers.
-    n (int): The number of samples to generate. Must be a positive integer.
-    param (dict): A dictionary containing the parameters 'mean' and 'sigma' for the log-normal distribution.
-                  - 'mean' (float): The mean of the underlying normal distribution.
-                  - 'sigma' (float): The standard deviation of the underlying normal distribution.
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        Random key for generating samples.
+    n : int
+        Number of samples to generate.
+    param : dict
+        Dictionary with keys 'mean' and 'sigma' for the underlying normal distribution.
 
-    Returns:
-    jax.numpy.ndarray: An array of log-normal distributed samples.
+    Returns
+    -------
+    jax.numpy.ndarray
+        Array of shape (n,) with log-normal samples.
 
-    Raises:
-    ValueError: If 'n' is not a positive integer.
-    ValueError: If 'param' is not a dictionary with keys 'mean' and 'sigma'.
+    Raises
+    ------
+    ValueError
+        If n is not positive or param is missing required keys.
     """
 
     if not isinstance(n, int) or n <= 0:
@@ -360,21 +420,36 @@ def case_lognormal(key, n, param):
 
 def generate_random_effects(n, distribution, key, theta_tau, theta_phi):
     """
-    Generate the model's random effects, with distribution specified in "distribution"
-    for the random effects in the diffusion coefficient and conditionally gaussian
-    random effects in the drift
+    Generate random effects for the mixed SDE model.
 
-    Args:
-    n            : number of random effects to be generated (int)
-                   corresponds to the number of trajectories that will form the sample
-    distribution : distribution of the random effects in the diffusion coefficient,
-                   'exponential', 'weibull', 'gamma' or 'lognormal'
-    key          : random generation key
-    theta_tau    : parameters of the distribution of the random effects in the
-                   diffusion coefficient (dictionary)
-    theta_phi    : parameters of the distribution of the random effects in the drift
-                   (dictionary)
+    Parameters
+    ----------
+    n : int
+        Number of random effects to generate (number of trajectories).
+    distribution : str
+        Distribution for random effects in diffusion ('exponential', 'weibull', 'gamma', 'lognormal').
+    key : jax.random.PRNGKey
+        Random key for generating samples.
+    theta_tau : dict
+        Parameters for the diffusion random effect distribution.
+    theta_phi : dict
+        Parameters for the drift random effect distribution (keys: 'mu', 'omega2').
 
+    Returns
+    -------
+    jax.numpy.ndarray
+        Array of random effects tau for diffusion.
+    jax.numpy.ndarray
+        Array of random effects phi for drift.
+
+    Raises
+    ------
+    ValueError
+        If input parameters are invalid or required keys are missing.
+
+    Notes
+    -----
+    The function supports several distributions for tau and generates phi as Gaussian or multivariate normal.
     """
 
     if not isinstance(theta_tau, dict):
