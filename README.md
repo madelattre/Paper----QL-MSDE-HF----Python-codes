@@ -22,13 +22,14 @@ The goal is to evaluate the finite-sample performance of the proposed estimators
 
 ## Repository Structure
 
-| File/Folder               | Description |
+| File/Folder                | Description |
 |----------------------------|------------|
-| `mixedsde/`               | Python module defining the `Mixedsde` class and associated functions for drift, diffusion, and random effects. |
-| `main_simus.py`           | Main Python script to run simulations on parameter estimation. |
-| `run_simus.sh`            | Bash script to launch experiments. Modify `--model` and `--N` arguments for different experiments. |
-| `res/`                    | Directory where `.pickle` result files are saved. Can be changed in `main_simus.py`. |
-| `examples/` | Scripts and materials for reproducing the real-data analysis (neuronal data application) presented in the paper. |
+| `mixedsde/`                | Python module defining the `Mixedsde` class and associated functions for drift, diffusion, and random effects. |
+| `main_simus.py`            | Main Python script to run simulations on parameter estimation. |
+| `run_simus.sh`             | Bash script to launch experiments. Modify `--model` and `--N` arguments for different experiments. |
+| `res/`                     | Directory where `.pickle` result files are saved. Can be changed in `main_simus.py`. |
+| `Neural-application.ipynb` | Scripts for reproducing the real-data analysis presented in the paper. |
+| `examples/`                | Directory where the neural data are stored. |
 ---
 
 ## Installation
@@ -107,4 +108,4 @@ python plot_results.py
 
 ### Real data application
 
-The script `examples/Neuronal-application.ipynb` contains the code to reproduce the analysis of neuronal data presented in the paper. It includes data loading, preprocessing, model fitting, and visualization of results.
+The script `examples/Neural-application.ipynb` contains the code to reproduce the analysis of neuronal data presented in the paper. It includes data loading, preprocessing, model fitting, and visualization of results.
