@@ -17,9 +17,12 @@ DIRECTORY_PATH = Path.cwd() / 'res'
 true_values = {
     r'$\eta$': 0.5,
     r'$\alpha$': -0.7,
-    r'$\sigma$': 0.7,
-    r'$\mu$': 2.0,
-    r'$\omega^2$': 1.0,
+    r'$\lambda$': 0.7,
+    r'$\varphi_f$': 2.0,
+    r'$\sigma_r^2$': 1.0,
+    # r'$\sigma$': 0.7,
+    # r'$\mu$': 2.0,
+    # r'$\omega^2$': 1.0,
 }
 
 file = os.path.join(DIRECTORY_PATH, 'res_m1.pkl')
@@ -32,9 +35,12 @@ df_clean = df.drop(columns=['(h,T)', 'h', 'm_t', 'sigma_t', 'mu_s', 'omega2_s'])
 df_clean = df_clean.rename(columns={
     'eta': r'$\eta$',
     'm': r'$\alpha$',
-    'sigma': r'$\sigma$',
-    'mu_j': r'$\mu$',
-    'omega2_j': r'$\omega^2$',
+    'sigma': r'$\lambda$',
+    'mu_j': r'$\varphi_f$',
+    'omega2_j': r'$\sigma_r^2$',
+    # 'sigma': r'$\sigma$',
+    # 'mu_j': r'$\mu$',
+    # 'omega2_j': r'$\omega^2$',
 })
 
 
@@ -100,9 +106,12 @@ true_values = {
     r'$\eta$': 0.5,
     r'$\alpha$': 1.0,
     r'$\lambda$': 0.6,
-    r'$\mu_1$': 2.0,
-    r'$\mu_2$': 1.0,
-    r'$\omega_1^2$': 1.0,
+    r'$\varphi_f^{(1)}$': 2.0,
+    r'$\varphi_f^{(2)}$': 1.0,
+    r'$\sigma_r^2$': 1.0,
+    # r'$\mu_1$': 2.0,
+    # r'$\mu_2$': 1.0,
+    # r'$\omega_1^2$': 1.0,
 }
 
 file = os.path.join(DIRECTORY_PATH, 'res_m2.pkl')
@@ -117,9 +126,9 @@ df_clean = df_clean.rename(columns={
     'eta': r'$\eta$',
     'alpha': r'$\alpha$',
     'lambda': r'$\lambda$',
-    'mu1_j': r'$\mu_1$',
-    'mu2_j': r'$\mu_2$',
-    'omega21_j': r'$\omega_1^2$',
+    'mu1_j': r'$\varphi_f^{(1)}$',  # r'$\mu_1$',
+    'mu2_j': r'$\varphi_f^{(2)}$',  # r'$\mu_2$',
+    'omega21_j': r'$\sigma_r^2$',  # r'$\omega_1^2$',
 })
 
 
@@ -184,11 +193,16 @@ plt.savefig(DIRECTORY_PATH / 'boxplots-model2.png', dpi=300)
 true_values = {
     r'$\eta$': 0.5,
     r'$\lambda$': 1.0,
-    r'$\mu_1$': 2.0,
-    r'$\mu_2$': 1.0,
-    r'$\omega_1^2$': 1.0,
-    r'$\omega_2^2$': 0.5,
-    r'$\omega_3$': -0.2,
+    r'$\varphi_f^{(1)}$': 2.0,
+    r'$\varphi_f^{(2)}$': 1.0,
+    r'$\sigma_{r,1}^2$': 1.0,
+    r'$\sigma_{r,2}^2$': 0.5,
+    r'$\sigma_{r,1,2}$': -0.2,
+    # r'$\mu_1$': 2.0,
+    # r'$\mu_2$': 1.0,
+    # r'$\omega_1^2$': 1.0,
+    # r'$\omega_2^2$': 0.5,
+    # r'$\omega_3$': -0.2,
 }
 
 file = os.path.join(DIRECTORY_PATH, 'res_m3.pkl')
@@ -201,11 +215,11 @@ df_clean = df.drop(columns=['(h,T)', 'h', 'alpha_t', 'mu1_s',
 df_clean = df_clean.rename(columns={
     'eta': r'$\eta$',
     'alpha': r'$\lambda$',
-    'mu1_j': r'$\mu_1$',
-    'mu2_j': r'$\mu_2$',
-    'omega21_j': r'$\omega_1^2$',
-    'omega22_j': r'$\omega_3$',
-    'omega23_j': r'$\omega_2^2$',
+    'mu1_j': r'$\varphi_f^{(1)}$',  # r'$\mu_1$',
+    'mu2_j': r'$\varphi_f^{(2)}$',  # r'$\mu_2$',
+    'omega21_j': r'$\sigma_{r,1}^2$',  # r'$\omega_1^2$',
+    'omega22_j': r'$\sigma_{r,1,2}$',  # r'$\omega_3$',
+    'omega23_j': r'$\sigma_{r,2}^2$',  # r'$\omega_2^2$',
 })
 
 id_cols = ['n', 'T', 'N']
