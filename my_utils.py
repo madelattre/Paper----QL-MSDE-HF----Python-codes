@@ -1,3 +1,6 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
 import jax
 from mixedsde.fit import from_covariance_to_vector, from_vector_to_covariance, precompute_indices, estim_theta_tau
 from mixedsde.data_processing import extract_data
@@ -12,7 +15,11 @@ def oneRun(seed,
            h_euler,
            y0,
            t0,
-           covariance_to_estimate):
+           covariance_to_estimate,
+           estimate_eta=True,
+           eta_value=None,
+           plot=False,
+           picture_name='trajectories.png'):
 
     std_factor = 0.25
     nb_theta_phi = len(
@@ -34,9 +41,22 @@ def oneRun(seed,
     subkey = jax.random.split(key, 2)
 
     # Simulate the data
-
     y_init, tau, phi, time_mat_init = model.generate_mixed_sde(
         nb_trajectories, jax.numpy.array([y0]), t0, max(t_max_seq), h_euler, key)
+
+    # Plot the simulated trajectories if requested
+    if plot == True:
+        K = min(20, nb_trajectories)
+        y_np = np.array(y_init)
+        t_np = np.array(time_mat_init)
+        plt.figure(figsize=(8, 5))
+        for k in range(K):
+            plt.plot(t_np[k, 1:], y_np[k])
+            plt.xlabel("Time")
+            plt.ylabel("y")
+            # plt.title(f"{K} first trajectories of the simulated data")
+            plt.grid()
+        plt.savefig(picture_name, dpi=300, bbox_inches="tight")
 
     # Generate intial values for parameter estimation
     epsilon = jax.random.normal(subkey[0,], shape=(
@@ -87,16 +107,15 @@ def oneRun(seed,
         t_index = [i for i, valeur in enumerate(t_max_seq) if valeur == t_max]
         for h in h_seq:
             h_index = [i for i, valeur in enumerate(h_seq) if valeur == h]
-
             y, time_mat = extract_data(y_init, time_mat_init, 0, t_max, h)
 
             eta_hat, theta_tau_hat, tau_hat, mu_hat, omega2_hat = model.fit_mixed_sde(
-                y, time_mat, init, covariance_to_estimate, method='joint')
+                y, time_mat, init, covariance_to_estimate, estimate_eta, eta_value, method='joint')
             omega2_hat_vect = from_covariance_to_vector(
                 omega2_hat, precompute_indices(covariance_to_estimate))
 
             _, _, _, mu_hat_2, omega2_hat_2 = model.fit_mixed_sde(
-                y, time_mat, init, covariance_to_estimate, method='stepwise')
+                y, time_mat, init, covariance_to_estimate, estimate_eta, eta_value, method='stepwise')
             omega2_hat_2_vect = from_covariance_to_vector(
                 omega2_hat_2, precompute_indices(covariance_to_estimate))
 
@@ -133,5 +152,4 @@ def oneRun(seed,
            'phi': phi,
            'tau': tau,
            'seed': key}
-
     return res

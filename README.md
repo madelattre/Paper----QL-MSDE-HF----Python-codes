@@ -57,7 +57,7 @@ bash run_simus.sh
 
 The bash script loops over multiple seeds or settings defined inside the file, allowing batch execution of experiments — for example, to compute Monte Carlo averages as in the paper.
 You can edit the bash file to change:
-- the model (`--model m1`, `--model m2`, `--model m3` for models 1, 2, and 3 from the paper)
+- the model (`--model m1`, `--model m2`, `--model m4` for models 1, 2, and 3 from the paper)
 - the number of trajectories (`--N`),
 - or the range of seeds.
 

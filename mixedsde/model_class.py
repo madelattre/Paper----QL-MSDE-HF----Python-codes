@@ -259,7 +259,7 @@ class Mixedsde:
         """
         return _estim_tau_vectorized(self.diffusion_func, y, eta, time)
 
-    def estim_diffusion_param(self, y, time, init):
+    def estim_diffusion_param(self, y, time, init, estimate_eta, eta_value):
         """
         Estimate the diffusion parameters of the mixed SDE model.
 
@@ -271,6 +271,10 @@ class Mixedsde:
             Time matrix or time steps corresponding to the data.
         init : dict
             Dictionary containing initial guesses for the diffusion parameters (key: 'diffusion').
+        estimate_eta : bool
+            Flag indicating whether to estimate eta or use a fixed value.
+        eta_value : float or array-like, optional
+            Fixed value of eta to use if estimate_eta is False.
 
         Returns
         -------
@@ -281,7 +285,7 @@ class Mixedsde:
             - tau_hat: Estimated random effects in diffusion for each trajectory.
         """
         return _estim_diffusion_param(
-            y, time, self.diffusion_re_dist, init["diffusion"], self.diffusion_func
+            y, time, self.diffusion_re_dist, init["diffusion"], self.diffusion_func, estimate_eta, eta_value
         )
 
     def estim_drift_param(self, y, time_mat, eta, tau, init, covariance_to_estimate, method):
@@ -330,7 +334,7 @@ class Mixedsde:
             method
         )
 
-    def fit_mixed_sde(self, y, time_mat, init, covariance_to_estimate, method):
+    def fit_mixed_sde(self, y, time_mat, init, covariance_to_estimate, estimate_eta, eta_value, method):
         """
         Fit the mixed SDE model to observed data by sequentially estimating diffusion and drift parameters.
 
@@ -344,6 +348,10 @@ class Mixedsde:
             Dictionary containing initial guesses for both diffusion and drift parameters.
         covariance_to_estimate : array-like
             Covariance matrix specifying which elements to estimate for the drift random effects.
+        estimate_eta : bool
+            Flag indicating whether to estimate eta or use a fixed value.
+        eta_value : float or array-like, optional
+            Fixed value of eta to use if estimate_eta is False.
         method : str
             Estimation method to use for drift parameters (e.g., optimization algorithm name).
 
@@ -362,7 +370,7 @@ class Mixedsde:
         This method first estimates the diffusion parameters, then uses those results to estimate the drift parameters.
         """
         eta_hat, theta_tau_hat, tau_hat = self.estim_diffusion_param(
-            y, time_mat[:, 1:], init
+            y, time_mat[:, 1:], init, estimate_eta, eta_value
         )
         mu_hat, omega2_hat = self.estim_drift_param(
             y, time_mat[:, 1:], eta_hat, tau_hat, init, covariance_to_estimate,

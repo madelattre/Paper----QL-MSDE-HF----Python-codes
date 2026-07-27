@@ -446,7 +446,6 @@ def estim_theta_tau(distribution, tau, init):
                     )
                 )
                 return value
-
         res = minimize(logpdf_lognormal, init, method="BFGS")
     else:
         raise ValueError("Unknown distribution.")
@@ -454,8 +453,8 @@ def estim_theta_tau(distribution, tau, init):
     return res.x
 
 
-@partial(jax.jit, static_argnums=(2, 4))
-def _estim_diffusion_param(y, time_mat, tau_distribution, init, diffusion_func):
+@partial(jax.jit, static_argnums=(2, 4, 5))
+def _estim_diffusion_param(y, time_mat, tau_distribution, init, diffusion_func, estimate_eta, eta_value=None):
     """
     Sequentially estimate the diffusion parameters of the mixed SDE model.
 
@@ -471,22 +470,32 @@ def _estim_diffusion_param(y, time_mat, tau_distribution, init, diffusion_func):
         Initial values for eta and theta_tau.
     diffusion_func : callable
         Diffusion function.
+    estimate_eta : bool
+        Flag indicating whether to estimate eta or use a fixed value.
+    eta_value : float or array-like, optional
+        Fixed value of eta to use if estimate_eta is False.
 
     Returns
     -------
     tuple
         (eta_hat, theta_tau_hat, tau_hat): Estimated eta, distribution parameters, and tau vector.
     """
-    init_eta = init["eta"]
+
+    if estimate_eta:
+        init_eta = init["eta"]
+        eta_hat = estim_eta(y=y, time_mat=time_mat,
+                            init=init_eta, diffusion_func=diffusion_func)
+    else:
+        eta_hat = eta_value
+
     init_theta_tau = jax.numpy.array(list(init["theta_tau"].values()))
-    eta_hat = estim_eta(y=y, time_mat=time_mat, init=init_eta,
-                        diffusion_func=diffusion_func)
     tau_hat = _estim_tau_vectorized(
         y=y, eta=eta_hat, time_mat=time_mat, diffusion_func=diffusion_func
     )
     theta_tau_hat = estim_theta_tau(
         distribution=tau_distribution, tau=tau_hat, init=init_theta_tau
     )
+
     return (eta_hat, theta_tau_hat, tau_hat)
 
 
@@ -922,10 +931,16 @@ def from_vector_to_covariance(theta, mu_size, covariance_to_estimate_indices):
     ndarray
         Symmetric covariance matrix of size (mu_size, mu_size).
     """
+
     omega2_p = jax.numpy.zeros((mu_size * mu_size,))
     omega2_p = omega2_p.at[covariance_to_estimate_indices].set(theta)
     omega2_p = omega2_p.reshape(mu_size, mu_size)
+
     omega2 = omega2_p + omega2_p.T - jax.numpy.diag(jax.numpy.diag(omega2_p))
+
+    diag = jax.numpy.exp(jax.numpy.diag(omega2))
+    omega2 = omega2.at[jax.numpy.diag_indices(mu_size)].set(diag)
+
     return omega2
 
 

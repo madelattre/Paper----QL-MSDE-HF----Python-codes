@@ -20,3 +20,5 @@ venv/
 *.pickle
 *.png
 rescale_neuronal_plot.py
+res-v1/
+res-v2/
